@@ -40,7 +40,7 @@ export default function (pi: ExtensionAPI) {
     return {
       message: {
         customType: "memory-index",
-        content: `当前 agent：${agent}。长期记忆（正文位于 memory/${agent}/ 目录下，用 read 工具按需读取；写记忆用 memory_write 工具，file 参数只传文件名本身，例如 user.md）：\n${index}`,
+        content: `当前 agent：${agent}。长期记忆正文位于 ${dir}/（绝对路径，直接用 read 工具按需读取，不要猜测其它位置）；写记忆用 memory_write 工具，file 参数只传文件名本身，例如 user.md）：\n${index}`,
         display: false,
       },
     };
@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI) {
       mkdirSync(dir, { recursive: true });
       appendFileSync(join(dir, name), `- ${params.note}\n`);
       return {
-        content: [{ type: "text", text: `已写入 memory/${agent}/${name}` }],
+        content: [{ type: "text", text: `已写入 ${join(dir, name)}` }],
         details: {},
       };
     },
