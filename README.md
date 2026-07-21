@@ -30,7 +30,11 @@ pi install git:github.com/oc101363-creator/pi-dpi
    <https://github.com/login/device> 输入代码完成授权（OAuth device flow）。
 4. **克隆内容仓库**：授权成功后自动 `git clone` 到
    `~/.pi/agent/dpi/repo`（token 不落 remote URL，走一次性 credential helper）。
-5. **立即生效**：自动 `/reload`，agent 卡片、技能、提示词、记忆即刻可用。
+5. **声明式注册**：把内容仓库的本地路径写进 `settings.json` 的 `packages`——
+   内容仓库本身是标准 pi 包（`package.json` 里 `pi` 清单声明 skills/prompts/themes），
+   此后技能、提示词、主题由 pi 原生加载（支持 `/skill:` 命令与 `pi config` 启停），
+   引擎不再代劳资源发现。
+6. **立即生效**：自动 `/reload`，agent 卡片、技能、提示词、记忆即刻可用。
 
 其它命令：
 
@@ -65,6 +69,14 @@ pi install git:github.com/oc101363-creator/pi-dpi
 ```
 
 新增 agent = 新增 `agents/<name>/SYSTEM.md`（+ 可选 skills/prompts），无需改任何代码。
+
+## superpowers 支持
+
+dpi 内置了 [superpowers](https://github.com/obra/superpowers) 的 bootstrap 注入器
+（移植自官方 pi 版，机制一致：`context` 事件注入 + 会话开始/压缩后重新武装）。
+作用域跟随当前 agent：**只有 `agents/<当前agent>/skills/using-superpowers/` 存在时才注入**——
+给哪个 agent 超能力，就把 superpowers 技能目录放进它的 `skills/` 下（技能本体原样拷贝，
+一个字都不改），去掉则删目录。
 
 ## 配置与数据位置
 
