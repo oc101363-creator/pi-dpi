@@ -109,31 +109,9 @@ export default function (pi: ExtensionAPI) {
     return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
   });
 
-  // 把所有 agents/*/skills、agents/*/prompts 与 shared/ 下对应目录纳入资源发现（仅列存在的目录）
-  pi.on("resources_discover", async () => {
-    const repo = repoPath();
-    if (!repo) return {};
-    const skillPaths: string[] = [];
-    const promptPaths: string[] = [];
-    const themePaths: string[] = [];
-    const agentsDir = join(repo, "agents");
-    if (existsSync(agentsDir)) {
-      for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const skills = join(agentsDir, entry.name, "skills");
-        const prompts = join(agentsDir, entry.name, "prompts");
-        if (existsSync(skills)) skillPaths.push(skills);
-        if (existsSync(prompts)) promptPaths.push(prompts);
-      }
-    }
-    const sharedSkills = join(repo, "shared", "skills");
-    const sharedPrompts = join(repo, "shared", "prompts");
-    if (existsSync(sharedSkills)) skillPaths.push(sharedSkills);
-    if (existsSync(sharedPrompts)) promptPaths.push(sharedPrompts);
-    const themes = join(repo, "themes");
-    if (existsSync(themes)) themePaths.push(themes);
-    return { skillPaths, promptPaths, themePaths };
-  });
+  // 技能/提示词/主题的加载已由 pi 声明式接管：内容仓库是标准 pi 包
+  // （package.json 的 pi 清单 + settings.json 的 packages 条目），
+  // 引擎不再经 resources_discover 动态报备。
 
   // /agent [name]：带参数直接切换；无参数时交互选择或报告当前 agent
   pi.registerCommand("agent", {

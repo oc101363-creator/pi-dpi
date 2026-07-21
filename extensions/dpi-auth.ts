@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import {
   defaultConfig,
+  ensurePackageInSettings,
   hasToken,
   loadConfig,
   saveConfig,
@@ -289,8 +290,12 @@ async function login(args: string, ctx: ExtensionCommandContext): Promise<void> 
   }
   saveConfig(patch);
 
+  // 声明式关键一步：把内容包路径写进 settings.json packages，
+  // 之后技能/提示词/主题由 pi 原生按包规则加载，引擎不再代劳
+  const declared = ensurePackageInSettings(repoPath);
+
   ctx.ui.notify(
-    `绑定成功 ✓\n仓库: ${repoUrl}\n本地: ${repoPath}\n可用 agents: ${agents.join(", ") || "（未发现 agents/*/SYSTEM.md）"}`,
+    `绑定成功 ✓\n仓库: ${repoUrl}\n本地: ${repoPath}\n可用 agents: ${agents.join(", ") || "（未发现 agents/*/SYSTEM.md）"}${declared ? "\n已声明为 pi 包（settings.json）" : ""}`,
     "info",
   );
 

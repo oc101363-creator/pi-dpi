@@ -154,3 +154,28 @@ export function scanAgents(repoPath: string): string[] {
     return [];
   }
 }
+
+/**
+ * 把内容仓库的本地路径声明进 pi 的 settings.json packages（声明式加载的关键一步）。
+ * 已在列表中（字符串或对象形式）则不重复添加。返回是否有改动。
+ * 注意：pi 运行中改写 settings.json 后需要 ctx.reload() 才会生效（调用方负责）。
+ */
+export function ensurePackageInSettings(source: string): boolean {
+  const settingsPath = join(agentDir(), "settings.json");
+  try {
+    const raw = existsSync(settingsPath)
+      ? (JSON.parse(readFileSync(settingsPath, "utf-8")) as Record<string, unknown>)
+      : {};
+    const packages = Array.isArray(raw.packages) ? [...(raw.packages as unknown[])] : [];
+    const declared = packages.some((p) =>
+      typeof p === "string" ? p === source : (p as { source?: unknown })?.source === source,
+    );
+    if (declared) return false;
+    packages.push(source);
+    raw.packages = packages;
+    writeFileSync(settingsPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+    return true;
+  } catch {
+    return false; // settings 读写失败不阻断绑定流程
+  }
+}
