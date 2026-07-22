@@ -49,6 +49,7 @@ pi install git:github.com/oc101363-creator/pi-dpi
 | `/extensions` | 管理当前 agent 的扩展组合：勾选/取消、删除注册表扩展 |
 | `/sync` | 手动同步内容仓库（pull --rebase → 清扫提交 → push） |
 | `/record on\|off\|status` | 会话存档开关 |
+| `/sessions` | 浏览仓库存档会话，一键恢复到本机并切换 |
 
 自动同步：pi 启动时 `pull --rebase --autostash` + 清扫推送，退出时再清扫推送一次；
 全部静默容错，失败（断网/冲突）不影响 pi 启动。
@@ -71,7 +72,7 @@ pi install git:github.com/oc101363-creator/pi-dpi
 ├── machines/               # 机器层配置：<hostname>.json 覆写白名单字段
 │                           #   （proxy、recordSessions），随仓库同步，新机器自动获配
 ├── memory/<agent>/*.md     # 长期记忆，按 agent 隔离，随仓库版本化
-├── sessions/               # 会话存档（/record on 时写入）
+├── sessions/<agent>/       # 会话存档按 agent 归档（_legacy/ 为旧平铺档迁移区）
 ├── docs/plans|specs/       # 工作流文档：大改先 spec（设计）后 plan（执行计划）
 └── themes/                 # 可选，pi 主题
 ```
