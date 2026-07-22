@@ -72,6 +72,10 @@ function showAgentCard(ctx: ExtensionContext, agent: string): void {
   const skills = manifest.skills.filter((name) =>
     existsSync(join(repo, "skills", name, "SKILL.md")),
   );
+  // 扩展列表同理：逐一校验注册表 extensions/<name>.ts 存在（与技能校验对称）
+  const extensions = manifest.extensions.filter((name) =>
+    existsSync(join(repo, "extensions", `${name}.ts`)),
+  );
   const prompts = readPrompts(join(repo, "agents", agent, "prompts"));
   const memDir = join(repo, "memory", agent);
   const memCount = existsSync(memDir)
@@ -83,6 +87,7 @@ function showAgentCard(ctx: ExtensionContext, agent: string): void {
       `${theme.fg("mdHeading", `[${name}]`)}\n${theme.fg("dim", `  ${body}`)}`;
     const sections = [section("Agent", title ? `${agent} — ${title}` : agent)];
     if (skills.length > 0) sections.push(section("Skills", skills.join(", ")));
+    if (extensions.length > 0) sections.push(section("Extensions", extensions.join(", ")));
     if (prompts.length > 0) sections.push(section("Prompts", prompts.join(", ")));
     sections.push(section("Memory", `${memCount} 个文件`));
     return new Text(sections.join("\n\n"), 0, 0);

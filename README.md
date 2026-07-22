@@ -93,12 +93,9 @@ agent 在各自的 `agent.json` 里声明。日常增删技能、调整组合不
 
 ## superpowers 支持
 
-dpi 内置了 [superpowers](https://github.com/obra/superpowers) 的 bootstrap 注入器
-（移植自官方 pi 版，机制一致：`context` 事件注入 + 会话开始/压缩后重新武装）。
-作用域跟随当前 agent：**只有 `agents/<当前agent>/agent.json` 的 `skills` 数组声明了
-`"using-superpowers"` 时才注入**——给哪个 agent 超能力，就把 `"using-superpowers"`
-写进它的 `agent.json`（技能本体放在仓库根 `skills/using-superpowers/` 注册表里，
-原样拷贝自官方，一个字都不改），去掉则从数组删除。
+[superpowers](https://github.com/obra/superpowers) 自 v0.5.0 起作为内容仓库
+`extensions/` 注册表中的普通扩展，经 `agent.json` 声明 + settings 白名单按 agent
+加载（引擎内置注入器已退役）。
 
 ## 机器层配置（machines/）
 
