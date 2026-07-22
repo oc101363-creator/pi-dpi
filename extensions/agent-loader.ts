@@ -3,8 +3,10 @@
  *
  * - session_start：渲染当前 agent 的能力卡片（复刻 pi 原生面板样式）+ 底栏状态
  * - before_agent_start：把 agents/<当前agent>/SYSTEM.md 链式注入系统提示词
- * - resources_discover：返回 agents 下各 agent 的 skills/prompts、shared/ 与 themes/ 下存在的目录
- * - /agent [name]：查看/交互或直接切换当前 agent（写入 dpi 配置，跨进程保持）
+ * - resources_discover：按当前 agent 的 agent.json 声明，从仓库根 skills/ 注册表
+ *   返回该 agent 的技能目录（技能隔离的裁决点：未声明的技能不进会话）+
+ *   agents/<agent>/prompts
+ * - /agent [name]：查看/交互或直接切换当前 agent（写入 dpi 配置 + ctx.reload() 让新技能生效）
  *
  * 内容仓库路径全部来自 dpi 配置（config.repoPath）；未绑定时所有 hook 静默 no-op。
  */
@@ -12,7 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, saveConfig, scanAgents } from "../src/config.ts";
+import { loadConfig, readAgentManifest, saveConfig, scanAgents } from "../src/config.ts";
 
 // ---------- 内容仓库路径（每次调用时从配置取，切换绑定即时生效） ----------
 
@@ -29,15 +31,6 @@ function currentAgent(): string {
 
 // ---------- agent 卡片（TUI 面板） ----------
 
-// 读取技能目录下的技能名；tag 用于标注来源（如「共享」）
-function readSkillNames(dir: string, tag = ""): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(dir, e.name, "SKILL.md")))
-    .map((e) => (tag ? `${e.name}(${tag})` : e.name))
-    .sort();
-}
-
 // 列出提示词模板（xxx.md → /xxx）
 function readPrompts(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -47,7 +40,7 @@ function readPrompts(dir: string): string[] {
     .sort();
 }
 
-// 取 SYSTEM.md 首行非标题、非空文本作为 agent 一句话简介
+// 取 SYSTEM.md 首行非标题、非空文本作为 agent 一句话简介（agent.json 无 description 时的回退）
 function agentTitle(repo: string, agent: string): string {
   try {
     const head = readFileSync(join(repo, "agents", agent, "SYSTEM.md"), "utf-8").slice(0, 1000);
@@ -67,11 +60,12 @@ function showAgentCard(ctx: ExtensionContext, agent: string): void {
   if (!ctx.hasUI) return;
   const repo = repoPath();
   if (!repo) return;
-  const title = agentTitle(repo, agent);
-  const skills = [
-    ...readSkillNames(join(repo, "agents", agent, "skills")),
-    ...readSkillNames(join(repo, "shared", "skills"), "共享"),
-  ];
+  const manifest = readAgentManifest(repo, agent);
+  const title = manifest.description ?? agentTitle(repo, agent);
+  // 技能列表来自 agent.json 声明，逐一校验注册表 skills/<name>/SKILL.md 存在
+  const skills = manifest.skills.filter((name) =>
+    existsSync(join(repo, "skills", name, "SKILL.md")),
+  );
   const prompts = readPrompts(join(repo, "agents", agent, "prompts"));
   const memDir = join(repo, "memory", agent);
   const memCount = existsSync(memDir)
@@ -109,9 +103,22 @@ export default function (pi: ExtensionAPI) {
     return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
   });
 
-  // 技能/提示词/主题的加载已由 pi 声明式接管：内容仓库是标准 pi 包
-  // （package.json 的 pi 清单 + settings.json 的 packages 条目），
-  // 引擎不再经 resources_discover 动态报备。
+  // 技能发现的裁决点：只返回当前 agent 在 agent.json 里声明的技能
+  // （从仓库根 skills/ 注册表逐一校验存在性），外加该 agent 的 prompts 目录。
+  // 未声明的技能不进会话——这是 dpi 技能隔离的实现机制。
+  pi.on("resources_discover", async () => {
+    const repo = repoPath();
+    if (!repo) return {};
+    const agent = currentAgent();
+    const manifest = readAgentManifest(repo, agent);
+    const skillPaths = manifest.skills
+      .map((name) => join(repo, "skills", name))
+      .filter((dir) => existsSync(join(dir, "SKILL.md")));
+    const promptPaths: string[] = [];
+    const promptsDir = join(repo, "agents", agent, "prompts");
+    if (existsSync(promptsDir)) promptPaths.push(promptsDir);
+    return { skillPaths, promptPaths };
+  });
 
   // /agent [name]：带参数直接切换；无参数时交互选择或报告当前 agent
   pi.registerCommand("agent", {
@@ -132,7 +139,9 @@ export default function (pi: ExtensionAPI) {
         }
         saveConfig({ currentAgent: name });
         showAgentCard(ctx, name);
-        ctx.ui.notify(`已切换到 agent: ${name}`, "info");
+        ctx.ui.notify(`已切换到 agent: ${name}，正在重载资源…`, "info");
+        // 重载让 resources_discover 按新 agent 的声明重新发现技能
+        await ctx.reload();
         return;
       }
       const current = currentAgent();
@@ -148,7 +157,8 @@ export default function (pi: ExtensionAPI) {
       if (!picked) return; // 用户取消，不做更改
       saveConfig({ currentAgent: picked });
       showAgentCard(ctx, picked);
-      ctx.ui.notify(`已切换到 agent: ${picked}`, "info");
+      ctx.ui.notify(`已切换到 agent: ${picked}，正在重载资源…`, "info");
+      await ctx.reload();
     },
   });
 }

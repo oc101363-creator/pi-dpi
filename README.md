@@ -31,10 +31,12 @@ pi install git:github.com/oc101363-creator/pi-dpi
 4. **克隆内容仓库**：授权成功后自动 `git clone` 到
    `~/.pi/agent/dpi/repo`（token 不落 remote URL，走一次性 credential helper）。
 5. **声明式注册**：把内容仓库的本地路径写进 `settings.json` 的 `packages`——
-   内容仓库本身是标准 pi 包（`package.json` 里 `pi` 清单声明 skills/prompts/themes），
-   此后技能、提示词、主题由 pi 原生加载（支持 `/skill:` 命令与 `pi config` 启停），
-   引擎不再代劳资源发现。
-6. **立即生效**：自动 `/reload`，agent 卡片、技能、提示词、记忆即刻可用。
+   内容仓库本身是标准 pi 包（`package.json` 里 `pi` 清单声明 prompts/themes），
+   提示词与主题由 pi 原生加载。
+6. **技能按声明发现**：引擎在 `resources_discover` 时读取**当前 agent** 的
+   `agent.json`，只把声明的技能（仓库根 `skills/` 注册表条目）返回给 pi——
+   未声明的技能不进会话，这是 dpi 的技能隔离机制。
+7. **立即生效**：自动 `/reload`，agent 卡片、技能、提示词、记忆即刻可用。
 
 其它命令：
 
@@ -58,25 +60,37 @@ pi install git:github.com/oc101363-creator/pi-dpi
 ├── agents/                 # 多 agent 平行世界，一个目录一个完整人格
 │   └── <name>/
 │       ├── SYSTEM.md       # 人格定义（每轮对话注入系统提示词）
-│       ├── skills/         # 该 agent 专属技能（<skill>/SKILL.md）
+│       ├── agent.json      # 能力组合声明：{ "description": "…", "skills": ["commit", …] }
 │       └── prompts/        # 该 agent 专属提示词模板（xxx.md → /xxx）
-├── shared/
-│   ├── skills/             # 所有 agent 共享技能
-│   └── prompts/            # 共享提示词模板
+├── skills/                 # 技能注册表：平铺的技能库（<skill>/SKILL.md），
+│                           #   不直接属于任何 agent，由 agent.json 按名组合
+├── machines/               # 机器层配置：<hostname>.json 覆写白名单字段
+│                           #   （proxy、recordSessions），随仓库同步，新机器自动获配
 ├── memory/<agent>/*.md     # 长期记忆，按 agent 隔离，随仓库版本化
 ├── sessions/               # 会话存档（/record on 时写入）
+├── docs/plans|specs/       # 工作流文档：大改先 spec（设计）后 plan（执行计划）
 └── themes/                 # 可选，pi 主题
 ```
 
-新增 agent = 新增 `agents/<name>/SYSTEM.md`（+ 可选 skills/prompts），无需改任何代码。
+新增 agent = 新增 `agents/<name>/{SYSTEM.md,agent.json}` + 在 `skills/` 注册表挑技能
+填进 `skills` 数组，无需改任何代码。新增技能 = 在 `skills/` 下加一个目录，然后由需要的
+agent 在各自的 `agent.json` 里声明。
 
 ## superpowers 支持
 
 dpi 内置了 [superpowers](https://github.com/obra/superpowers) 的 bootstrap 注入器
 （移植自官方 pi 版，机制一致：`context` 事件注入 + 会话开始/压缩后重新武装）。
-作用域跟随当前 agent：**只有 `agents/<当前agent>/skills/using-superpowers/` 存在时才注入**——
-给哪个 agent 超能力，就把 superpowers 技能目录放进它的 `skills/` 下（技能本体原样拷贝，
-一个字都不改），去掉则删目录。
+作用域跟随当前 agent：**只有 `agents/<当前agent>/agent.json` 的 `skills` 数组声明了
+`"using-superpowers"` 时才注入**——给哪个 agent 超能力，就把 `"using-superpowers"`
+写进它的 `agent.json`（技能本体放在仓库根 `skills/using-superpowers/` 注册表里，
+原样拷贝自官方，一个字都不改），去掉则从数组删除。
+
+## 机器层配置（machines/）
+
+引擎加载配置时，会在全局 `config.json` 之上叠加内容仓库的
+`machines/<hostname>.json`（hostname 归一化为小写 `[a-z0-9-]`，如
+`MacBook-Air → macbook-air`）。白名单字段：`proxy`、`recordSessions`——机器相关的
+设置随仓库同步，换新机器时写一次机器文件即自动获配，无需逐台重设。
 
 ## 配置与数据位置
 

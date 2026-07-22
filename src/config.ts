@@ -16,7 +16,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 
 /** dpi 持久化配置（~/.pi/agent/dpi/config.json） */
@@ -79,22 +79,49 @@ export function defaultConfig(): DpiConfig {
   return { ...DEFAULTS, repoPath: join(dpiDir(), "repo") };
 }
 
+/** 当前机器名（归一化为小写 [a-z0-9-]，如 MacBook-Air → macbook-air） */
+export function machineName(): string {
+  try {
+    return (
+      hostname()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "unknown"
+    );
+  } catch {
+    return "unknown";
+  }
+}
+
 /** 读取配置；文件缺失/损坏/字段类型错误一律回退默认，绝不抛异常 */
 export function loadConfig(): DpiConfig {
   const cfg = defaultConfig();
   try {
-    if (!existsSync(configPath())) return cfg;
-    const raw = JSON.parse(readFileSync(configPath(), "utf-8")) as Record<string, unknown>;
-    if (typeof raw.repoUrl === "string") cfg.repoUrl = raw.repoUrl;
-    if (typeof raw.repoPath === "string" && raw.repoPath !== "") cfg.repoPath = raw.repoPath;
-    if (typeof raw.branch === "string" && raw.branch !== "") cfg.branch = raw.branch;
-    if (typeof raw.proxy === "string") cfg.proxy = raw.proxy;
-    if (typeof raw.currentAgent === "string" && raw.currentAgent !== "") {
-      cfg.currentAgent = raw.currentAgent;
+    if (existsSync(configPath())) {
+      const raw = JSON.parse(readFileSync(configPath(), "utf-8")) as Record<string, unknown>;
+      if (typeof raw.repoUrl === "string") cfg.repoUrl = raw.repoUrl;
+      if (typeof raw.repoPath === "string" && raw.repoPath !== "") cfg.repoPath = raw.repoPath;
+      if (typeof raw.branch === "string" && raw.branch !== "") cfg.branch = raw.branch;
+      if (typeof raw.proxy === "string") cfg.proxy = raw.proxy;
+      if (typeof raw.currentAgent === "string" && raw.currentAgent !== "") {
+        cfg.currentAgent = raw.currentAgent;
+      }
+      if (typeof raw.recordSessions === "boolean") cfg.recordSessions = raw.recordSessions;
     }
-    if (typeof raw.recordSessions === "boolean") cfg.recordSessions = raw.recordSessions;
   } catch {
     // 配置文件损坏：整体回退默认
+  }
+  // 机器层覆写：内容仓库 machines/<hostname>.json 中的白名单字段优先于全局配置，
+  // 让代理、会话存档等机器相关设置随仓库同步（nixos hosts/ 式分层）
+  try {
+    const machineFile = join(cfg.repoPath, "machines", `${machineName()}.json`);
+    if (existsSync(machineFile)) {
+      const raw = JSON.parse(readFileSync(machineFile, "utf-8")) as Record<string, unknown>;
+      if (typeof raw.proxy === "string") cfg.proxy = raw.proxy;
+      if (typeof raw.recordSessions === "boolean") cfg.recordSessions = raw.recordSessions;
+    }
+  } catch {
+    // 机器文件损坏：忽略，保留全局配置
   }
   return cfg;
 }
@@ -152,6 +179,38 @@ export function scanAgents(repoPath: string): string[] {
       .sort();
   } catch {
     return [];
+  }
+}
+
+/** agent 声明文件（agents/<name>/agent.json）：从技能注册表组合该 agent 的能力 */
+export interface AgentManifest {
+  /** 一句话简介；缺省时调用方可回退到 SYSTEM.md 首行 */
+  description?: string;
+  /** 声明的技能名（对应仓库根 skills/<name>/ 注册表条目） */
+  skills: string[];
+}
+
+/**
+ * 读取 agents/<agent>/agent.json；缺失/损坏回退空声明。
+ * 技能名做目录名白名单校验，防御路径穿越。
+ */
+export function readAgentManifest(repoPath: string, agent: string): AgentManifest {
+  try {
+    const raw = JSON.parse(
+      readFileSync(join(repoPath, "agents", agent, "agent.json"), "utf-8"),
+    ) as Record<string, unknown>;
+    const skills = Array.isArray(raw.skills)
+      ? raw.skills.filter(
+          (s): s is string => typeof s === "string" && /^[\w-]+$/.test(s),
+        )
+      : [];
+    const description =
+      typeof raw.description === "string" && raw.description !== ""
+        ? raw.description
+        : undefined;
+    return { description, skills };
+  } catch {
+    return { skills: [] };
   }
 }
 

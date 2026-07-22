@@ -2,8 +2,9 @@
  * superpowers：按当前 agent 注入 superpowers bootstrap（移植自官方 .pi/extensions/superpowers.ts）。
  *
  * 与官方版的差异只在「作用域」：官方版全局注入；dpi 版跟随当前激活 agent——
- * 仅当 <repoPath>/agents/<currentAgent>/skills/using-superpowers/SKILL.md 存在时注入，
- * 即「哪个 agent 拥有超能力」完全由内容仓库的目录结构决定（目录结构即配置）。
+ * 仅当 agents/<currentAgent>/agent.json 的 skills 声明包含 "using-superpowers"
+ * 且注册表 skills/using-superpowers/SKILL.md 存在时注入。
+ * 即「哪个 agent 拥有超能力」由内容仓库的声明式组合决定（agent.json 即配置）。
  *
  * 注入机制与官方一致：context 事件改消息数组，session_start/session_compact 重新武装，
  * agent_end 后停火；技能本体一个字不改，仅追加 pi 工具映射说明。
@@ -11,7 +12,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, readAgentManifest } from "../src/config.ts";
 
 const EXTREMELY_IMPORTANT_MARKER = "<EXTREMELY_IMPORTANT>";
 const BOOTSTRAP_MARKER = "superpowers:using-superpowers bootstrap for pi (dpi)";
@@ -20,12 +21,14 @@ const BOOTSTRAP_MARKER = "superpowers:using-superpowers bootstrap for pi (dpi)";
 let cachedPath: string | null = null;
 let cachedBootstrap: string | null = null;
 
-// 当前 agent 的 bootstrap 文件路径；未绑定/无此技能返回 null
+// 当前 agent 声明了 using-superpowers 时返回注册表中的 bootstrap 文件路径；否则 null
 function bootstrapSkillPath(): string | null {
   const cfg = loadConfig();
   if (!cfg.repoUrl) return null;
   const agent = /^[\w-]+$/.test(cfg.currentAgent) ? cfg.currentAgent : "coder";
-  const path = join(cfg.repoPath, "agents", agent, "skills", "using-superpowers", "SKILL.md");
+  const manifest = readAgentManifest(cfg.repoPath, agent);
+  if (!manifest.skills.includes("using-superpowers")) return null;
+  const path = join(cfg.repoPath, "skills", "using-superpowers", "SKILL.md");
   return existsSync(path) ? path : null;
 }
 

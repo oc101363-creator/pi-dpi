@@ -1,6 +1,6 @@
 {
   "name": "pi-dpi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dπ — 拆解 π：pi 的解耦 agent 仓库引擎",
   "license": "MIT",
   "keywords": ["pi-package", "pi-extension"],
