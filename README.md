@@ -45,6 +45,7 @@ pi install git:github.com/oc101363-creator/pi-dpi
 | `/agent-login [仓库地址]` | 绑定/重新绑定内容仓库 |
 | `/agent-logout` | 清除本机 token（本地仓库与配置保留） |
 | `/agent [名字]` | 查看/切换当前 agent |
+| `/skills` | 管理当前 agent 的技能组合：勾选/取消、删除注册表技能 |
 | `/sync` | 手动同步内容仓库（pull --rebase → 清扫提交 → push） |
 | `/record on\|off\|status` | 会话存档开关 |
 
@@ -74,7 +75,8 @@ pi install git:github.com/oc101363-creator/pi-dpi
 
 新增 agent = 新增 `agents/<name>/{SYSTEM.md,agent.json}` + 在 `skills/` 注册表挑技能
 填进 `skills` 数组，无需改任何代码。新增技能 = 在 `skills/` 下加一个目录，然后由需要的
-agent 在各自的 `agent.json` 里声明。
+agent 在各自的 `agent.json` 里声明。日常增删技能、调整组合不需要手编文件，用 `/skills`
+交互完成（勾选/取消即写回 `agent.json`，也可删除注册表技能）。
 
 ## superpowers 支持
 
