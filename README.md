@@ -46,6 +46,7 @@ pi install git:github.com/oc101363-creator/pi-dpi
 | `/agent-logout` | 清除本机 token（本地仓库与配置保留） |
 | `/agent [名字]` | 查看/切换当前 agent |
 | `/skills` | 管理当前 agent 的技能组合：勾选/取消、删除注册表技能 |
+| `/extensions` | 管理当前 agent 的扩展组合：勾选/取消、删除注册表扩展 |
 | `/sync` | 手动同步内容仓库（pull --rebase → 清扫提交 → push） |
 | `/record on\|off\|status` | 会话存档开关 |
 
@@ -61,9 +62,11 @@ pi install git:github.com/oc101363-creator/pi-dpi
 ├── agents/                 # 多 agent 平行世界，一个目录一个完整人格
 │   └── <name>/
 │       ├── SYSTEM.md       # 人格定义（每轮对话注入系统提示词）
-│       ├── agent.json      # 能力组合声明：{ "description": "…", "skills": ["commit", …] }
+│       ├── agent.json      # 能力组合声明：{ "description": "…", "skills": […], "extensions": […] }
 │       └── prompts/        # 该 agent 专属提示词模板（xxx.md → /xxx）
 ├── skills/                 # 技能注册表：平铺的技能库（<skill>/SKILL.md），
+│                           #   不直接属于任何 agent，由 agent.json 按名组合
+├── extensions/             # 扩展注册表：平铺的扩展库（<name>.ts），
 │                           #   不直接属于任何 agent，由 agent.json 按名组合
 ├── machines/               # 机器层配置：<hostname>.json 覆写白名单字段
 │                           #   （proxy、recordSessions），随仓库同步，新机器自动获配
@@ -76,7 +79,17 @@ pi install git:github.com/oc101363-creator/pi-dpi
 新增 agent = 新增 `agents/<name>/{SYSTEM.md,agent.json}` + 在 `skills/` 注册表挑技能
 填进 `skills` 数组，无需改任何代码。新增技能 = 在 `skills/` 下加一个目录，然后由需要的
 agent 在各自的 `agent.json` 里声明。日常增删技能、调整组合不需要手编文件，用 `/skills`
-交互完成（勾选/取消即写回 `agent.json`，也可删除注册表技能）。
+交互完成（勾选/取消即写回 `agent.json`，也可删除注册表技能）。扩展同理：新增扩展 =
+在 `extensions/` 下加一个 `.ts` 文件，由需要的 agent 在 `agent.json` 的 `extensions`
+数组里声明，日常管理用 `/extensions` 交互完成。
+
+## per-agent 扩展
+
+内容仓库根 `extensions/` 是平铺的扩展注册表（一个 `.ts` 文件一个扩展），不直接属于
+任何 agent。机制一句话：**切换 agent 时引擎把内容包 settings 条目的 `extensions`
+过滤器改写为当前 agent 声明的白名单，过滤发生在 import 之前 = 真隔离**（未声明的
+扩展文件根本不会被 jiti 执行）；代价是切换即全量 `reload`。启动时引擎还会自动对齐
+一次过滤器（启动自愈），`agent.json` 被外部编辑或 `/sync` 拉取后，下一次重载即收敛。
 
 ## superpowers 支持
 

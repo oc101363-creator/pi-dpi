@@ -188,11 +188,13 @@ export interface AgentManifest {
   description?: string;
   /** 声明的技能名（对应仓库根 skills/<name>/ 注册表条目） */
   skills: string[];
+  /** 声明的扩展名（对应仓库根 extensions/<name>.ts 注册表条目），缺省回退 [] */
+  extensions: string[];
 }
 
 /**
  * 读取 agents/<agent>/agent.json；缺失/损坏回退空声明。
- * 技能名做目录名白名单校验，防御路径穿越。
+ * 技能名与扩展名做白名单校验（同时是防路径穿越），损坏字段静默丢弃。
  */
 export function readAgentManifest(repoPath: string, agent: string): AgentManifest {
   try {
@@ -204,19 +206,24 @@ export function readAgentManifest(repoPath: string, agent: string): AgentManifes
           (s): s is string => typeof s === "string" && /^[\w-]+$/.test(s),
         )
       : [];
+    const extensions = Array.isArray(raw.extensions)
+      ? raw.extensions.filter(
+          (s): s is string => typeof s === "string" && /^[\w-]+$/.test(s),
+        )
+      : [];
     const description =
       typeof raw.description === "string" && raw.description !== ""
         ? raw.description
         : undefined;
-    return { description, skills };
+    return { description, skills, extensions };
   } catch {
-    return { skills: [] };
+    return { skills: [], extensions: [] };
   }
 }
 
 /**
  * 写回 agents/<agent>/agent.json 的 skills 声明（读取-修改-整体覆写），
- * 保留 description 等其他字段；JSON 2 空格缩进 + 末尾换行，普通权限。
+ * 保留 description、extensions 等其他字段；JSON 2 空格缩进 + 末尾换行，普通权限。
  * agent 名与技能名一律白名单校验防路径穿越；读取/写入失败返回 false，绝不抛异常。
  */
 export function writeAgentManifestSkills(
@@ -236,6 +243,75 @@ export function writeAgentManifestSkills(
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * 写回 agents/<agent>/agent.json 的 extensions 声明（与 writeAgentManifestSkills 对称），
+ * 保留 description、skills 等其他字段；agent 名与扩展名一律白名单校验防路径穿越。
+ */
+export function writeAgentManifestExtensions(
+  repoPath: string,
+  agent: string,
+  extensions: string[],
+): boolean {
+  try {
+    if (!/^[\w-]+$/.test(agent)) return false;
+    const file = join(repoPath, "agents", agent, "agent.json");
+    const raw = existsSync(file)
+      ? (JSON.parse(readFileSync(file, "utf-8")) as Record<string, unknown>)
+      : {};
+    // 白名单过滤 + 去重，保持声明干净
+    raw.extensions = [...new Set(extensions.filter((s) => /^[\w-]+$/.test(s)))];
+    writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 把当前 agent 的扩展声明同步为 settings.json 里内容包的 extensions 过滤器
+ * （per-agent 扩展加载的裁决点）。
+ *
+ * 机制：读当前 agent 的 agent.json.extensions，把 settings.json packages 中
+ * source === cfg.repoPath 的条目（字符串/对象形式都认）重写为
+ * { source: cfg.repoPath, extensions: ["extensions/<name>.ts", ...] }；
+ * 声明为空则 extensions: []（= 全部禁载）。pi 的过滤发生在 jiti import 之前，
+ * 被过滤的扩展文件根本不会执行，因此这是真隔离；但改动要等下一次 ctx.reload()
+ * 重读 settings 后才生效（调用方负责触发）。
+ *
+ * 其他 packages 条目与其他 settings 字段原样保留；找不到该条目视为无改动。
+ * agent 名与扩展名白名单校验防路径穿越；全部容错，返回是否有改动。
+ */
+export function syncExtensionFilter(cfg: DpiConfig): boolean {
+  const settingsPath = join(agentDir(), "settings.json");
+  try {
+    if (!cfg.repoUrl || !cfg.repoPath) return false;
+    const agent = /^[\w-]+$/.test(cfg.currentAgent) ? cfg.currentAgent : "coder";
+    const declared = readAgentManifest(cfg.repoPath, agent).extensions;
+    const filter = declared.map((name) => `extensions/${name}.ts`);
+
+    const raw = existsSync(settingsPath)
+      ? (JSON.parse(readFileSync(settingsPath, "utf-8")) as Record<string, unknown>)
+      : {};
+    const packages = Array.isArray(raw.packages) ? [...(raw.packages as unknown[])] : [];
+    const idx = packages.findIndex((p) =>
+      typeof p === "string"
+        ? p === cfg.repoPath
+        : (p as { source?: unknown })?.source === cfg.repoPath,
+    );
+    if (idx < 0) return false; // 未声明为 pi 包：无改动
+
+    const next = { source: cfg.repoPath, extensions: filter };
+    // 与现状完全一致则不写盘（保持 mtime 稳定，幂等安全）
+    if (JSON.stringify(packages[idx]) === JSON.stringify(next)) return false;
+    packages[idx] = next;
+    raw.packages = packages;
+    writeFileSync(settingsPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+    return true;
+  } catch {
+    return false; // settings 读写失败不阻断调用流程
   }
 }
 

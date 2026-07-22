@@ -14,7 +14,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, readAgentManifest, saveConfig, scanAgents } from "../src/config.ts";
+import {
+  loadConfig,
+  readAgentManifest,
+  saveConfig,
+  scanAgents,
+  syncExtensionFilter,
+} from "../src/config.ts";
 
 // ---------- 内容仓库路径（每次调用时从配置取，切换绑定即时生效） ----------
 
@@ -139,6 +145,8 @@ export default function (pi: ExtensionAPI) {
         }
         saveConfig({ currentAgent: name });
         showAgentCard(ctx, name);
+        // 重载前先同步扩展过滤器，让 reload 按新 agent 的扩展声明隔离加载
+        syncExtensionFilter(loadConfig());
         ctx.ui.notify(`已切换到 agent: ${name}，正在重载资源…`, "info");
         // 重载让 resources_discover 按新 agent 的声明重新发现技能
         await ctx.reload();
@@ -157,6 +165,8 @@ export default function (pi: ExtensionAPI) {
       if (!picked) return; // 用户取消，不做更改
       saveConfig({ currentAgent: picked });
       showAgentCard(ctx, picked);
+      // 重载前先同步扩展过滤器，让 reload 按新 agent 的扩展声明隔离加载
+      syncExtensionFilter(loadConfig());
       ctx.ui.notify(`已切换到 agent: ${picked}，正在重载资源…`, "info");
       await ctx.reload();
     },

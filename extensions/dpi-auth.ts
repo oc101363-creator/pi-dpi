@@ -20,6 +20,7 @@ import {
   loadConfig,
   saveConfig,
   scanAgents,
+  syncExtensionFilter,
   tokenPath,
   clearToken,
   writeToken,
@@ -299,7 +300,9 @@ async function login(args: string, ctx: ExtensionCommandContext): Promise<void> 
     "info",
   );
 
-  // 7. 重载扩展与资源，让 resources_discover 立即生效
+  // 7. 重载扩展与资源，让 resources_discover 立即生效；
+  // reload 前同步扩展过滤器，让内容包扩展按当前 agent 声明隔离加载
+  syncExtensionFilter(loadConfig());
   try {
     await ctx.reload();
   } catch {
