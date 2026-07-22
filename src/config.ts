@@ -215,6 +215,31 @@ export function readAgentManifest(repoPath: string, agent: string): AgentManifes
 }
 
 /**
+ * 写回 agents/<agent>/agent.json 的 skills 声明（读取-修改-整体覆写），
+ * 保留 description 等其他字段；JSON 2 空格缩进 + 末尾换行，普通权限。
+ * agent 名与技能名一律白名单校验防路径穿越；读取/写入失败返回 false，绝不抛异常。
+ */
+export function writeAgentManifestSkills(
+  repoPath: string,
+  agent: string,
+  skills: string[],
+): boolean {
+  try {
+    if (!/^[\w-]+$/.test(agent)) return false;
+    const file = join(repoPath, "agents", agent, "agent.json");
+    const raw = existsSync(file)
+      ? (JSON.parse(readFileSync(file, "utf-8")) as Record<string, unknown>)
+      : {};
+    // 白名单过滤 + 去重，保持声明干净
+    raw.skills = [...new Set(skills.filter((s) => /^[\w-]+$/.test(s)))];
+    writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 把内容仓库的本地路径声明进 pi 的 settings.json packages（声明式加载的关键一步）。
  * 已在列表中（字符串或对象形式）则不重复添加。返回是否有改动。
  * 注意：pi 运行中改写 settings.json 后需要 ctx.reload() 才会生效（调用方负责）。
