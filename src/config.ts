@@ -303,7 +303,12 @@ export function syncExtensionFilter(cfg: DpiConfig): boolean {
     );
     if (idx < 0) return false; // 未声明为 pi 包：无改动
 
-    const next = { source: cfg.repoPath, extensions: filter };
+    // 注意：对象条目的 filter 省略某资源键时，pi 会绕过 manifest 回退到约定目录
+    // 全量收集（collectDefaultResources）——仓库根的 skills/ 约定目录会被整个加载，
+    // 冲掉引擎按 agent.json 声明的技能隔离。故显式 skills: [] 禁用包级技能收集，
+    // 技能发现完全留给引擎的 resources_discover。prompts/themes 在 manifest 中有
+    // 声明，省略时按 manifest 收集，行为正确，无需显式列出。
+    const next = { source: cfg.repoPath, extensions: filter, skills: [] };
     // 与现状完全一致则不写盘（保持 mtime 稳定，幂等安全）
     if (JSON.stringify(packages[idx]) === JSON.stringify(next)) return false;
     packages[idx] = next;
