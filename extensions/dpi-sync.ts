@@ -6,13 +6,14 @@
  * - session_shutdown：sweep → push
  * - /sync：手动执行完整同步并反馈结果
  *
- * 每步独立 try/catch 静默容错（自动路径 8s 超时），带 credential helper 与按需代理；
- * 未绑定仓库或无 token 时直接跳过。git 失败绝不能影响 pi 启动/退出。
+ * 每步独立 try/catch 静默容错（自动路径 8s 超时）；github/http 远端带 credential
+ * helper 与按需代理，ssh/local 远端零凭证不注入 helper、不走 http 代理。
+ * 未绑定仓库或需要令牌的远端未登录时直接跳过。git 失败绝不能影响 pi 启动/退出。
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { hasToken, loadConfig, tokenPath } from "../src/config.ts";
+import { hasToken, loadConfig, remoteNeedsToken, tokenPath } from "../src/config.ts";
 import { GIT_TIMEOUT, gitIn } from "../src/git.ts";
 import type { GitOptions } from "../src/git.ts";
 
@@ -21,15 +22,16 @@ interface SyncTarget {
   opts: GitOptions;
 }
 
-/** 同步前提检查：已绑定 + 有 token + 本地仓库存在；不满足返回 null */
+/** 同步前提检查：已绑定 + 需要令牌的类型已登录 + 本地仓库存在；不满足返回 null */
 function target(): SyncTarget | null {
   const cfg = loadConfig();
-  if (!cfg.repoUrl || !hasToken()) return null;
+  if (!cfg.repoUrl || (remoteNeedsToken(cfg.remoteKind) && !hasToken())) return null;
   if (!existsSync(join(cfg.repoPath, ".git"))) return null;
-  return {
-    repoPath: cfg.repoPath,
-    opts: { tokenFile: tokenPath(), proxy: cfg.proxy, timeoutMs: GIT_TIMEOUT },
-  };
+  // ssh/local 零凭证：不注入 credential helper，也不走 http 代理
+  const opts: GitOptions = remoteNeedsToken(cfg.remoteKind)
+    ? { tokenFile: tokenPath(), proxy: cfg.proxy, timeoutMs: GIT_TIMEOUT }
+    : { noAuth: true, proxy: "", timeoutMs: GIT_TIMEOUT };
+  return { repoPath: cfg.repoPath, opts };
 }
 
 /** 清扫：暂存全部改动，有变更才提交；返回是否有提交产生 */

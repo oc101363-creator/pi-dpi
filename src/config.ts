@@ -19,10 +19,15 @@ import {
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 
+/** 远端类型：github = GitHub（OAuth）；ssh = scp/ssh 协议（本机 key）；http = 通用 HTTPS（用户名+令牌）；local = 本地路径 */
+export type RemoteKind = "github" | "ssh" | "http" | "local";
+
 /** dpi 持久化配置（~/.pi/agent/dpi/config.json） */
 export interface DpiConfig {
-  /** 内容仓库地址（归一化为 https://github.com/user/repo.git）；空串 = 未绑定 */
+  /** 内容仓库地址（github 类型归一化为 https://github.com/user/repo.git，其余类型保留用户输入原样）；空串 = 未绑定 */
   repoUrl: string;
+  /** 远端类型；旧配置缺失时 loadConfig 按 repoUrl 推断 */
+  remoteKind: RemoteKind;
   /** 内容仓库本地克隆路径，默认 <agentDir>/dpi/repo */
   repoPath: string;
   /** 同步分支，默认 main */
@@ -37,12 +42,31 @@ export interface DpiConfig {
 
 const DEFAULTS: DpiConfig = {
   repoUrl: "",
+  remoteKind: "github",
   repoPath: "",
   branch: "main",
   proxy: "",
   currentAgent: "coder",
   recordSessions: true,
 };
+
+/** 旧配置迁移：remoteKind 缺失/非法时按 repoUrl 推断远端类型（推断不出回退 github） */
+function inferRemoteKind(repoUrl: string): RemoteKind {
+  const s = repoUrl.trim().toLowerCase();
+  if (!s) return "github";
+  if (s.includes("github.com")) return "github";
+  if (s.startsWith("git@") || s.startsWith("ssh://") || /^[^/@:]+@[^/:]+:.+/.test(s)) {
+    return "ssh";
+  }
+  if (s.startsWith("http://") || s.startsWith("https://")) return "http";
+  if (s.startsWith("/") || s.startsWith("~") || s.startsWith("file://")) return "local";
+  return "github";
+}
+
+/** 该远端类型是否需要访问令牌（github/http 需要；ssh 走本机 key、local 零认证） */
+export function remoteNeedsToken(kind: RemoteKind): boolean {
+  return kind === "github" || kind === "http";
+}
 
 /** pi 的 agent 目录（与 pi 本体约定一致） */
 export function agentDir(): string {
@@ -100,6 +124,15 @@ export function loadConfig(): DpiConfig {
     if (existsSync(configPath())) {
       const raw = JSON.parse(readFileSync(configPath(), "utf-8")) as Record<string, unknown>;
       if (typeof raw.repoUrl === "string") cfg.repoUrl = raw.repoUrl;
+      // remoteKind 白名单校验；缺失/非法一律按 repoUrl 推断，旧配置无缝迁移
+      if (
+        typeof raw.remoteKind === "string" &&
+        (["github", "ssh", "http", "local"] as const).includes(raw.remoteKind as RemoteKind)
+      ) {
+        cfg.remoteKind = raw.remoteKind as RemoteKind;
+      } else {
+        cfg.remoteKind = inferRemoteKind(cfg.repoUrl);
+      }
       if (typeof raw.repoPath === "string" && raw.repoPath !== "") cfg.repoPath = raw.repoPath;
       if (typeof raw.branch === "string" && raw.branch !== "") cfg.branch = raw.branch;
       if (typeof raw.proxy === "string") cfg.proxy = raw.proxy;
@@ -138,20 +171,41 @@ export function hasToken(): boolean {
   return readToken() !== "";
 }
 
-/** 读取 token；缺失/损坏返回空串 */
+/** 读取 token：取最后一个非空行（兼容旧单行格式；通用 HTTPS 两行格式为 用户名\n令牌）；缺失/损坏返回空串 */
 export function readToken(): string {
   try {
     if (!existsSync(tokenPath())) return "";
-    return readFileSync(tokenPath(), "utf-8").trim();
+    const lines = tokenLines();
+    return lines[lines.length - 1] ?? "";
   } catch {
     return "";
   }
 }
 
-/** 写 token：文件 0600，写后 chmod 兜底（抄 pi auth-storage 约定） */
-export function writeToken(token: string): void {
+/** 读取 token 用户名（两行格式的第一行）；单行旧格式/缺失返回空串 */
+export function readTokenUser(): string {
+  try {
+    if (!existsSync(tokenPath())) return "";
+    const lines = tokenLines();
+    return lines.length >= 2 ? lines[0] : "";
+  } catch {
+    return "";
+  }
+}
+
+/** token 文件按行拆分（逐行 trim、丢空行） */
+function tokenLines(): string[] {
+  return readFileSync(tokenPath(), "utf-8")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+}
+
+/** 写 token：给了 user 写「用户名\n令牌」两行（通用 HTTPS），否则单行旧格式；文件 0600，写后 chmod 兜底（抄 pi auth-storage 约定） */
+export function writeToken(token: string, user?: string): void {
   ensureDpiDir();
-  writeFileSync(tokenPath(), `${token}\n`, { mode: 0o600 });
+  const content = user ? `${user}\n${token}\n` : `${token}\n`;
+  writeFileSync(tokenPath(), content, { mode: 0o600 });
   try {
     chmodSync(tokenPath(), 0o600);
   } catch {

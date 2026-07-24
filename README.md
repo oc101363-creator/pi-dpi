@@ -22,14 +22,18 @@ pi install git:github.com/oc101363-creator/pi-dpi
 
 完整流程：
 
-1. **仓库地址**：直接 `/agent-login <地址>` 或交互输入。容忍 `user/repo`、
-   `github.com/user/repo`、`https://…`、`git@…` 等写法，统一归一化为
-   `https://github.com/user/repo.git`。
-2. **代理选择**：`不需要代理 / 使用 127.0.0.1:7890 / 自定义输入`。
-3. **GitHub 设备授权**：终端显示 `user_code` 与验证地址，浏览器打开
-   <https://github.com/login/device> 输入代码完成授权（OAuth device flow）。
-4. **克隆内容仓库**：授权成功后自动 `git clone` 到
+1. **仓库地址**：直接 `/agent-login <地址>` 或交互输入。地址格式自动决定远端类型
+   （见下方「远端类型矩阵」）：GitHub 写法（`user/repo`、`github.com/user/repo`、
+   `https://…`）归一化为 `https://github.com/user/repo.git`；`git@…`/`ssh://…`
+   走 SSH、`https://<自托管>/…` 走通用 HTTPS、本地路径/`file://` 走本地协议，
+   地址均按原样使用。
+2. **代理选择**（仅 GitHub / 通用 HTTPS）：`不需要代理 / 使用 127.0.0.1:7890 / 自定义输入`。
+3. **认证**：GitHub 走设备授权——终端显示 `user_code` 与验证地址，浏览器打开
+   <https://github.com/login/device> 输入代码完成授权（OAuth device flow）；
+   通用 HTTPS 改为交互输入「用户名 + 访问令牌/密码」；SSH 与本地仓库零凭证。
+4. **克隆内容仓库**：认证通过后自动 `git clone` 到
    `~/.pi/agent/dpi/repo`（token 不落 remote URL，走一次性 credential helper）。
+   克隆后会校验 `agents/*/SYSTEM.md` 存在——不是 dpi 内容仓库会响亮报错且不写配置。
 5. **声明式注册**：把内容仓库的本地路径写进 `settings.json` 的 `packages`——
    内容仓库本身是标准 pi 包（`package.json` 里 `pi` 清单声明 prompts/themes），
    提示词与主题由 pi 原生加载。
@@ -37,6 +41,29 @@ pi install git:github.com/oc101363-creator/pi-dpi
    `agent.json`，只把声明的技能（仓库根 `skills/` 注册表条目）返回给 pi——
    未声明的技能不进会话，这是 dpi 的技能隔离机制。
 7. **立即生效**：自动 `/reload`，agent 卡片、技能、提示词、记忆即刻可用。
+
+### 远端类型矩阵
+
+`/agent-login` 根据地址格式自动识别远端类型，无需手动选择：
+
+| 地址写法 | 类型 | 认证方式 |
+| --- | --- | --- |
+| `user/repo`、`github.com/user/repo`、`https://github.com/user/repo(.git)` | GitHub | OAuth device flow，token 单行存本机 |
+| `git@host:path`、`user@host:path`、`ssh://…`（含 `git@github.com:…`） | SSH 远端 | 零凭证，用本机 ssh key（绑定前先 `ls-remote` 探测） |
+| `https://<非 GitHub 托管>/…`、`http://…` | 通用 HTTPS | 交互输入用户名 + 访问令牌/密码，token 文件存两行（用户名 + 令牌） |
+| `/abs/path`、`~/path`、`file://…` | 本地仓库 | 零认证，走 git 本地协议（`~` 自动展开） |
+
+配置示例：
+
+```
+/agent-login git@git.example.com:user/agents.git        # SSH 远端
+/agent-login https://gitea.example.com/user/agents.git  # 通用 HTTPS
+/agent-login ~/srv/agents.git                           # 本地仓库
+```
+
+SSH 与本地仓库无需令牌；通用 HTTPS 适用于 Gitea / Forgejo / GitLab / Codeberg
+等任意 git 托管。自动同步对四类远端一视同仁：SSH/本地不注入 credential helper、
+不走 HTTP 代理；GitHub/通用 HTTPS 维持 token + 按需代理。
 
 其它命令：
 
@@ -109,8 +136,8 @@ agent 在各自的 `agent.json` 里声明。日常增删技能、调整组合不
 
 全部存于 `~/.pi/agent/dpi/`（目录 0700）：
 
-- `config.json`：repoUrl / repoPath / branch / proxy / currentAgent / recordSessions
-- `token`：GitHub token（0600）
+- `config.json`：repoUrl / remoteKind / repoPath / branch / proxy / currentAgent / recordSessions
+- `token`：访问令牌（0600；GitHub 为单行，通用 HTTPS 为「用户名 + 令牌」两行，SSH/本地仓库无此文件）
 - `repo/`：内容仓库本地克隆
 
 若设置了 `PI_CODING_AGENT_DIR` 环境变量，则以 `$PI_CODING_AGENT_DIR/dpi/` 替代。

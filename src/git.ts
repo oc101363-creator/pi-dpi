@@ -10,13 +10,17 @@ const run = promisify(execFile);
 /** 自动同步类 git 操作的统一超时 */
 export const GIT_TIMEOUT = 8000;
 
-/** 认证参数：清空外部 helper，改用从 token 文件读密码的一次性 helper */
+/**
+ * 认证参数：清空外部 helper，改用从 token 文件读凭证的一次性 helper。
+ * token 文件为两行（用户名\n令牌，通用 HTTPS）时逐行对应输出；
+ * 单行旧格式沿用 GitHub 惯例 username=x-access-token、password=该行。
+ */
 export function gitAuthArgs(tokenFile: string): string[] {
   return [
     "-c",
     "credential.helper=",
     "-c",
-    `credential.helper=!f() { echo username=x-access-token; echo "password=$(cat "${tokenFile}")"; }; f`,
+    `credential.helper=!f() { L1=$(sed -n 1p "${tokenFile}"); L2=$(sed -n 2p "${tokenFile}"); if [ -n "$L2" ]; then echo "username=$L1"; echo "password=$L2"; else echo username=x-access-token; echo "password=$L1"; fi; }; f`,
   ];
 }
 
@@ -27,13 +31,15 @@ export function gitProxyArgs(proxy: string): string[] {
 
 export interface GitOptions {
   tokenFile?: string;
+  /** 为 true 时不注入 credential helper（ssh/local 远端零凭证） */
+  noAuth?: boolean;
   proxy?: string;
   timeoutMs?: number;
 }
 
 function buildPrefix(opts: GitOptions): string[] {
   return [
-    ...(opts.tokenFile ? gitAuthArgs(opts.tokenFile) : []),
+    ...(opts.tokenFile && !opts.noAuth ? gitAuthArgs(opts.tokenFile) : []),
     ...gitProxyArgs(opts.proxy ?? ""),
   ];
 }
